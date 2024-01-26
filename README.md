@@ -1,3 +1,8 @@
+> [!WARNING]
+> This a modified LLVM fork that includes obfuscation from [`wwh1004/ollvm-16`](https://github.com/wwh1004/ollvm-16).
+> You need to pass `-DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON` to CMake to have it enabled.
+
+
 # The LLVM Compiler Infrastructure
 
 This directory and its sub-directories contain the source code for LLVM,
