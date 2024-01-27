@@ -17,7 +17,7 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v4
         with:
-          path: data/llvm-obfuscate
+          path: llvm-obfuscate
           submodules: recursive
 
       - name: Install Ninja
@@ -27,7 +27,7 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1
         with:
           max-size: 250M
-          key: sccache-ubuntu-22.04-{{ hashFiles('data/llvm-obfuscate/clang/lib/**/*.*') }}
+          key: sccache-ubuntu-22.04-{{ hashFiles('llvm-obfuscate/clang/lib/**/*.*') }}
           variant: sccache
 
       - name: Build Clang
