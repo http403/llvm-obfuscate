@@ -1,0 +1,95 @@
+name: Build Binaries
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  build-cache:
+    name: cache
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: data/llvm-obfuscate
+          submodules: recursive
+
+      - name: Install Ninja
+        uses: llvm/actions/install-ninja@22e9f909d35b50bd1181709564bfe816eaeaae81 # main
+
+      - name: Setup sccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          max-size: 250M
+          key: sccache-ubuntu-22.04-{{ hashFiles('data/llvm-obfuscate/clang/lib/**/*.*') }}
+          variant: sccache
+
+      - name: Build Clang
+        run: |
+          cmake -G Ninja -S llvm-obfuscate/llvm -B build \
+            -C clang/cmake/caches/Release.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+          ninja -v -C build clang
+
+  build-binaries:
+    name: ubuntu-22.04
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          path: llvm-obfuscate
+          submodules: recursive
+        
+      - name: Setup sccache
+        uses: hendrikmuhs/ccache-action@ca3acd2731eef11f1572ccb126356c2f9298d35e # v1.2.9
+        with:
+          max-size: 250M
+          key: sccache-ubuntu-22.04-{{ hashFiles('llvm-obfuscate/clang/lib/**/*.*') }}
+          save: false
+          variant: sccache
+
+      - name: Install dependencies
+        run: sudo apt install cmake chrpath gcc-multilib ninja-build
+
+      - name: Figure out how many cores can be used
+        run: |
+          # Figure out how many make processes to run.
+          if [ -z "$NumJobs" ]; then
+              NumJobs=`sysctl -n hw.activecpu 2> /dev/null || true`
+          fi
+          if [ -z "$NumJobs" ]; then
+              NumJobs=`sysctl -n hw.ncpu 2> /dev/null || true`
+          fi
+          if [ -z "$NumJobs" ]; then
+              NumJobs=`grep -c processor /proc/cpuinfo 2> /dev/null || true`
+          fi
+          if [ -z "$NumJobs" ]; then
+              NumJobs=3
+          fi
+          echo "NumJobs=$NumJobs" >> "$GITHUB_ENV"
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G Ninja -S llvm-obfuscate/llvm \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DLLVM_ENABLE_PROJECTS='llvm;clang;clang-tools-extra;openmp;lld;polly;mlir;flang' \
+            -DLLVM_ENABLE_RUNTIMES='compiler-rt;libcxx;libcxxabi;libunwind' \
+            -DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON \
+            -DLLVM_TARGETS_TO_BUILD=X86 \
+            -DLLVM_LIT_ARGS="-j $NumJobs -v"
+
+      - name: Build binaries
+        run: |
+          ninja -C build -j $NumJobs -v -l $((NumJobs + 1))
+      
+    
