@@ -33,7 +33,7 @@ jobs:
       - name: Build Clang
         run: |
           cmake -G Ninja -S llvm-obfuscate/llvm -B build \
-            -C clang/cmake/caches/Release.cmake \
+            -C llvm-obfuscate/clang/cmake/caches/Release.cmake \
             -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON
