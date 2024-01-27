@@ -1,6 +1,9 @@
 name: Build Binaries
 
-on: workflow_dispatch
+on: 
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 1 */2 *'
 
 permissions:
   contents: read
@@ -40,6 +43,8 @@ jobs:
     name: ubuntu-22.04
     runs-on: ubuntu-22.04
     needs: build-cache
+    env:
+      Package: clang+llvm+ollvm-${{ github.sha }}
     permissions:
       contents: write
 
@@ -93,4 +98,20 @@ jobs:
         run: |
           ninja -C build -j $NumJobs -v -l $((NumJobs + 1))
       
+      - name: Install and package binaries to dummy directory
+        run: |
+          export DESTDIR='install'
+          ninja -C build install
+          tar -C build -cf - "$DESTDIR" | gzip -9c > ${{ env.Package }}.tar.gz
+
+      - name: Get timestamp
+        run: echo "timestamp=$(date -u +'%Y%m%dT%H%m')" >> "$GITHUB_ENV"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ env.timestamp }}
+          path: ${{ env.Package }}.tar.gz
+          compression-level: 0
+          if-no-files-found: error
     
