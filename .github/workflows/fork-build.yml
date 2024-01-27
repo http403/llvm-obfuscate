@@ -39,6 +39,7 @@ jobs:
   build-binaries:
     name: ubuntu-22.04
     runs-on: ubuntu-22.04
+    needs: build-cache
     permissions:
       contents: write
 
