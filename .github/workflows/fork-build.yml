@@ -42,13 +42,14 @@ jobs:
       timestamp: ${{ steps.filter.outputs.timestamp }}
 
     steps:
-      - id: filter
+      - name: filter inputs
+        id: filter
+        env:
+          projects: ${{ inputs.projects }}
+          runtimes: ${{ inputs.runtimes }}
+          cmake_install_prefix: ${{ inputs.cmake_install_prefix }}
+          cmake_flags: ${{ inputs.cmake_flags }}
         run: |
-          projects=${{ inputs.projects }}
-          runtimes=${{ inputs.runtimes }}
-          cmake_install_prefix=${{ inputs.cmake_install_prefix }}
-          cmake_flags=${{ inputs.cmake_flags }}
-
           echo "projects=${projects:-llvm;clang;clang-tools-extra;lld;mlir}" >> "$GITHUB_OUTPUT"
           echo "runtimes=${runtimes:-compiler-rt;libcxx;libcxxabi;libunwind}" >> "$GITHUB_OUTPUT"
           echo "cmake_install_prefix=${cmake_install_prefix:-/opt/ollvm}" >> "$GITHUB_OUTPUT"
