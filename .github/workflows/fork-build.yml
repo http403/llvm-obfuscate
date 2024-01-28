@@ -2,6 +2,28 @@ name: Build Binaries
 
 on: 
   workflow_dispatch:
+    inputs:
+      projects:
+        description: 'LLVM projects to build (semi-colon delimited)'
+        default: 'llvm;clang;clang-tools-extra;lld;mlir'
+        required: false
+        type: string
+      runtimes:
+        description: 'LLVM runtimes to build (semi-colon delimited)'
+        default: 'compiler-rt;libcxx;libcxxabi;libunwind'
+        required: false
+        type: string
+      cmake_install_prefix:
+        description: 'Default install path'
+        default: '/opt/ollvm'
+        required: false
+        type: string
+      cmake_flags:
+        description: 'Additional flags passed during CMake configure'
+        default: ''
+        required: false
+        type: string
+
   schedule:
     - cron: '0 0 1 */2 *'
 
@@ -9,6 +31,31 @@ permissions:
   contents: read
 
 jobs:
+  prepare:
+    name: prepare variables
+    runs-on: ubuntu-22.04
+    outputs:
+      projects: ${{ steps.filter.outputs.projects }}
+      runtimes: ${{ steps.filter.outputs.runtimes }}
+      cmake_install_prefix: ${{ steps.filter.outputs.cmake_install_prefix }}
+      cmake_flags: ${{ steps.filter.outputs.cmake_flags }}
+      timestamp: ${{ steps.filter.outputs.timestamp }}
+
+    steps:
+      - id: filter
+        run: |
+          projects=${{ inputs.projects }}
+          runtimes=${{ inputs.runtimes }}
+          cmake_install_prefix=${{ inputs.cmake_install_prefix }}
+          cmake_flags=${{ inputs.cmake_flags }}
+
+          echo "projects=${projects:-llvm;clang;clang-tools-extra;lld;mlir}" >> "$GITHUB_OUTPUT"
+          echo "runtimes=${runtimes:-compiler-rt;libcxx;libcxxabi;libunwind}" >> "$GITHUB_OUTPUT"
+          echo "cmake_install_prefix=${cmake_install_prefix:-/opt/ollvm}" >> "$GITHUB_OUTPUT"
+          echo "cmake_flags=${cmake_flags:-}" >> "$GITHUB_OUTPUT"
+
+          echo "timestamp=$(date -u +'%Y%m%dT%H%mZ')" >> "$GITHUB_OUTPUT"
+
   build-cache:
     name: cache
     runs-on: ubuntu-22.04
@@ -42,9 +89,12 @@ jobs:
   build-binaries:
     name: ubuntu-22.04
     runs-on: ubuntu-22.04
-    needs: build-cache
+    needs: 
+      - prepare
+      - build-cache
     env:
       Package: clang+llvm+ollvm-${{ github.sha }}
+      DESTDIR: install
     permissions:
       contents: write
 
@@ -63,54 +113,45 @@ jobs:
           save: false
           variant: sccache
 
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
       - name: Install dependencies
-        run: sudo apt install cmake chrpath gcc-multilib ninja-build
+        run: sudo apt install chrpath gcc-multilib
 
       - name: Figure out how many cores can be used
-        run: |
-          # Figure out how many make processes to run.
-          if [ -z "$NumJobs" ]; then
-              NumJobs=`sysctl -n hw.activecpu 2> /dev/null || true`
-          fi
-          if [ -z "$NumJobs" ]; then
-              NumJobs=`sysctl -n hw.ncpu 2> /dev/null || true`
-          fi
-          if [ -z "$NumJobs" ]; then
-              NumJobs=`grep -c processor /proc/cpuinfo 2> /dev/null || true`
-          fi
-          if [ -z "$NumJobs" ]; then
-              NumJobs=3
-          fi
-          echo "NumJobs=$NumJobs" >> "$GITHUB_ENV"
+        uses: SimenB/github-actions-cpu-cores@v1
+        id: cpu-cores
 
       - name: Configure CMake
         run: |
           cmake -B build -G Ninja -S llvm-obfuscate/llvm \
+            -DCMAKE_INSTALL_PREFIX=${{ needs.prepare.outputs.cmake_install_prefix }} \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-            -DLLVM_ENABLE_PROJECTS='llvm;clang;clang-tools-extra;openmp;lld;polly;mlir;flang' \
-            -DLLVM_ENABLE_RUNTIMES='compiler-rt;libcxx;libcxxabi;libunwind' \
+            -DLLVM_ENABLE_PROJECTS='${{ needs.prepare.outputs.projects }}' \
+            -DLLVM_ENABLE_RUNTIMES='${{ needs.prepare.outputs.runtimes }}' \
             -DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON \
             -DLLVM_TARGETS_TO_BUILD=X86 \
-            -DLLVM_LIT_ARGS="-j $NumJobs -v"
+            -DLLVM_LIT_ARGS="-j ${{ steps.cpu-cores.outputs.count }} -v" \
+            ${{ needs.prepare.outputs.cmake_flags }}
 
       - name: Build binaries
         run: |
-          ninja -C build -j $NumJobs -v -l $((NumJobs + 1))
+          ninja -C build -j ${{ steps.cpu-cores.outputs.count }} -v -l $((${{ steps.cpu-cores.outputs.count }} + 1))
       
-      - name: Install and package binaries to dummy directory
+      - name: Install binaries to dummy directory (set by ENV)
+        run: ninja -C build install
+      
+      - name: Package binaries
         run: |
-          export DESTDIR='install'
-          ninja -C build install
-          tar -C build -cf - "$DESTDIR" | gzip -9c > ${{ env.Package }}.tar.gz
-
-      - name: Get timestamp
-        run: echo "timestamp=$(date -u +'%Y%m%dT%H%m')" >> "$GITHUB_ENV"
+          mv build/$DESTDIR ${{ env.Package }}
+          tar -cf - ${{ env.Package }} | gzip -9c > ${{ env.Package }}.tar.gz
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: build-${{ env.timestamp }}
+          name: build-${{ needs.prepare.outputs.timestamp }}
           path: ${{ env.Package }}.tar.gz
           compression-level: 0
           if-no-files-found: error
