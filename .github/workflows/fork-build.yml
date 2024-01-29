@@ -130,6 +130,8 @@ jobs:
             -DCMAKE_INSTALL_PREFIX=${{ needs.prepare.outputs.cmake_install_prefix }} \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
             -DLLVM_ENABLE_PROJECTS='${{ needs.prepare.outputs.projects }}' \
             -DLLVM_ENABLE_RUNTIMES='${{ needs.prepare.outputs.runtimes }}' \
             -DLLVM_OBFUSCATION_LINK_INTO_TOOLS=ON \
